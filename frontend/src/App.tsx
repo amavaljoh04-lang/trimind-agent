@@ -6,11 +6,24 @@ import ModelsView from "./components/ModelsView";
 import SettingsView from "./components/SettingsView";
 import { useWebSocket } from "./hooks/useWebSocket";
 
+/** Generate a UUID that works in non-secure contexts (plain HTTP) */
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback for non-secure contexts (http:// on non-localhost)
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function App() {
   const [activeView, setActiveView] = useState<"chat" | "models" | "settings">(
     "chat"
   );
-  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState<string>(generateId);
   const [isRunning, setIsRunning] = useState(false);
 
   const { connected, messages, send, clearMessages } = useWebSocket(sessionId);
@@ -29,7 +42,7 @@ function App() {
   }, [send]);
 
   const handleNewSession = useCallback(() => {
-    setSessionId(crypto.randomUUID());
+    setSessionId(generateId());
     clearMessages();
     setIsRunning(false);
     setActiveView("chat");
