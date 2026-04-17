@@ -170,10 +170,16 @@ if [ "$RUN_BACKEND" = true ]; then
     echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies..."
     cd "$SCRIPT_DIR/backend"
 
-    # Create venv if it doesn't exist
-    if [ ! -d ".venv" ]; then
+    # Create venv if it doesn't exist or is broken
+    if [ ! -f ".venv/bin/activate" ]; then
         echo -e "  ${CYAN}i${RESET} Creating virtual environment..."
+        rm -rf .venv 2>/dev/null
         python3 -m venv .venv
+        if [ ! -f ".venv/bin/activate" ]; then
+            echo -e "  ${RED}✗${RESET} Failed to create virtual environment."
+            echo -e "    Try: sudo apt install python3.12-venv"
+            exit 1
+        fi
     fi
 
     # Activate venv and install deps
