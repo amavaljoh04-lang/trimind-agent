@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
@@ -48,10 +48,12 @@ function App() {
   );
 
   // Detect "done" messages to stop the running indicator
-  const lastMsg = messages[messages.length - 1];
-  if (lastMsg?.type === "done" && isRunning) {
-    setIsRunning(false);
-  }
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.type === "done" && isRunning) {
+      setIsRunning(false);
+    }
+  }, [messages, isRunning]);
 
   return (
     <div className="flex h-screen bg-[#0a0a0f]">
