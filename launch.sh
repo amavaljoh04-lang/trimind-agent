@@ -106,11 +106,33 @@ echo -e "${CYAN}Configuration des ports${RESET}"
 echo -e "  (Appuyez sur Entree pour garder la valeur par defaut)"
 echo ""
 
+# Ports blocked by browsers (Chrome, Firefox, etc.) — ERR_UNSAFE_PORT
+UNSAFE_PORTS="1 7 9 11 13 15 17 19 20 21 22 23 25 37 42 43 53 77 79 87 95 101 102 103 104 109 110 111 113 115 117 119 123 135 139 143 179 389 427 465 512 513 514 515 526 530 531 532 540 548 556 563 587 601 636 993 995 2049 3659 4045 6000 6665 6666 6667 6668 6669 6697"
+
+is_unsafe_port() {
+    for p in $UNSAFE_PORTS; do
+        [ "$1" = "$p" ] && return 0
+    done
+    return 1
+}
+
 read -rp "  Port backend  [$DEFAULT_BACKEND_PORT]: " INPUT_BACKEND_PORT
 BACKEND_PORT="${INPUT_BACKEND_PORT:-$DEFAULT_BACKEND_PORT}"
+while is_unsafe_port "$BACKEND_PORT"; do
+    echo -e "  ${RED}✗${RESET} Port $BACKEND_PORT est bloque par les navigateurs (ERR_UNSAFE_PORT)!"
+    echo -e "  ${YELLOW}!${RESET} Utilisez un autre port (ex: 8000, 8080, 9000)"
+    read -rp "  Port backend  [$DEFAULT_BACKEND_PORT]: " INPUT_BACKEND_PORT
+    BACKEND_PORT="${INPUT_BACKEND_PORT:-$DEFAULT_BACKEND_PORT}"
+done
 
 read -rp "  Port frontend [$DEFAULT_FRONTEND_PORT]: " INPUT_FRONTEND_PORT
 FRONTEND_PORT="${INPUT_FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}"
+while is_unsafe_port "$FRONTEND_PORT"; do
+    echo -e "  ${RED}✗${RESET} Port $FRONTEND_PORT est bloque par les navigateurs (ERR_UNSAFE_PORT)!"
+    echo -e "  ${YELLOW}!${RESET} Utilisez un autre port (ex: 5555, 5173, 3000)"
+    read -rp "  Port frontend [$DEFAULT_FRONTEND_PORT]: " INPUT_FRONTEND_PORT
+    FRONTEND_PORT="${INPUT_FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}"
+done
 
 echo ""
 echo -e "  ${GREEN}✓${RESET} Backend  -> 0.0.0.0:${BACKEND_PORT}"
