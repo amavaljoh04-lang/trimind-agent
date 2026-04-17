@@ -205,7 +205,10 @@ if [ "$RUN_FRONTEND" = true ]; then
 
     echo -e "${BLUE}[5/5]${RESET} Building frontend for production..."
     npx vite build 2>&1 | tail -5
-    echo -e "  ${GREEN}✓${RESET} Frontend built"
+
+    # Inject backend port into built index.html so frontend connects to the right port at runtime
+    sed -i "s|</head>|<script>window.__TRIMIND_BACKEND_PORT__=$BACKEND_PORT;</script></head>|" dist/index.html
+    echo -e "  ${GREEN}✓${RESET} Frontend built (backend port: $BACKEND_PORT)"
 
     echo -e "  ${CYAN}i${RESET} Starting frontend on 0.0.0.0:$FRONTEND_PORT..."
     npx vite preview --port "$FRONTEND_PORT" --host 0.0.0.0 &

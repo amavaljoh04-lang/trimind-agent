@@ -1,4 +1,12 @@
-const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT || "8000";
+/** Read backend port from global config injected by launch.sh, or fallback to env/default */
+function getBackendPort(): string {
+  const win = window as unknown as Record<string, unknown>;
+  if (win.__TRIMIND_BACKEND_PORT__) return String(win.__TRIMIND_BACKEND_PORT__);
+  if (import.meta.env.VITE_BACKEND_PORT) return import.meta.env.VITE_BACKEND_PORT;
+  return "8000";
+}
+
+const BACKEND_PORT = getBackendPort();
 const API = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:${BACKEND_PORT}`;
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
