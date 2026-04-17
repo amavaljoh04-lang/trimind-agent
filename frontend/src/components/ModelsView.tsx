@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Brain,
   Code2,
   Download,
   Eye,
   Loader2,
+  Play,
   RefreshCw,
   Cpu,
 } from "lucide-react";
@@ -26,6 +28,8 @@ export default function ModelsView() {
   const [pullName, setPullName] = useState("");
   const [pulling, setPulling] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startMsg, setStartMsg] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -41,6 +45,22 @@ export default function ModelsView() {
       setHealthy(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStartOllama = async () => {
+    setStarting(true);
+    setStartMsg("");
+    try {
+      const res = await api.ollamaStart();
+      setStartMsg(res.message);
+      if (res.success) {
+        await refresh();
+      }
+    } catch {
+      setStartMsg("Failed to start Ollama. Make sure it is installed.");
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -109,6 +129,52 @@ export default function ModelsView() {
             </button>
           </div>
         </div>
+
+        {/* Ollama Status Banner */}
+        {!healthy && !loading && (
+          <div className="glass rounded-xl p-5 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <h3 className="text-sm font-semibold text-amber-400">
+                  Ollama is not running
+                </h3>
+                <p className="text-xs text-slate-400">
+                  TriMind needs Ollama to run AI models. Start Ollama or install it if not already installed.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    onClick={handleStartOllama}
+                    disabled={starting}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-300 text-sm hover:bg-amber-600/30 disabled:opacity-50 transition-all"
+                  >
+                    {starting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                    {starting ? "Starting..." : "Start Ollama"}
+                  </button>
+                </div>
+                {startMsg && (
+                  <p className="text-xs text-slate-300 mt-2 px-3 py-2 rounded bg-black/20 border border-white/5 font-mono">
+                    {startMsg}
+                  </p>
+                )}
+                <div className="text-xs text-slate-500 mt-2 space-y-1">
+                  <p>If Ollama is not installed:</p>
+                  <code className="block px-2 py-1 rounded bg-black/30 text-slate-400 font-mono">
+                    curl -fsSL https://ollama.com/install.sh | sh
+                  </code>
+                  <p className="mt-1">Then pull a model:</p>
+                  <code className="block px-2 py-1 rounded bg-black/30 text-slate-400 font-mono">
+                    ollama pull qwen2.5-coder:14b
+                  </code>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Role Assignment */}
         <div className="glass rounded-xl p-6 space-y-5">

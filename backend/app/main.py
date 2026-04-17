@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -82,6 +84,57 @@ async def healthz():
 async def get_hardware():
     hw = await detect_hardware()
     return hw.to_dict()
+
+
+# ── Ollama Status / Start ────────────────────────────────────────────
+@app.get("/api/ollama/status")
+async def ollama_status():
+    """Check if Ollama is running and reachable."""
+    assert ollama is not None
+    try:
+        models = await ollama.list_models()
+        return {
+            "running": True,
+            "model_count": len(models),
+            "url": get_config().ollama.base_url,
+        }
+    except Exception:
+        return {
+            "running": False,
+            "model_count": 0,
+            "url": get_config().ollama.base_url,
+        }
+
+
+@app.post("/api/ollama/start")
+async def ollama_start():
+    """Try to start Ollama if it's installed but not running."""
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        return {
+            "success": False,
+            "message": "Ollama is not installed. Run: curl -fsSL https://ollama.com/install.sh | sh",
+        }
+    try:
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        await asyncio.sleep(2)
+        # Verify it started
+        assert ollama is not None
+        try:
+            await ollama.list_models()
+            return {"success": True, "message": "Ollama started successfully"}
+        except Exception:
+            return {
+                "success": False,
+                "message": "Ollama process started but not responding. Check logs with: journalctl -u ollama",
+            }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 
 # ── Ollama Models ────────────────────────────────────────────────────

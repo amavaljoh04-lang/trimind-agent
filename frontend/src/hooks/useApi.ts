@@ -46,8 +46,19 @@ export interface SessionInfo {
   last_message: string | null;
 }
 
+export interface OllamaStatus {
+  running: boolean;
+  model_count: number;
+  url: string;
+}
+
 export const api = {
   hardware: () => apiFetch<HardwareInfo>("/api/hardware"),
+  ollamaStatus: () => apiFetch<OllamaStatus>("/api/ollama/status"),
+  ollamaStart: () =>
+    apiFetch<{ success: boolean; message: string }>("/api/ollama/start", {
+      method: "POST",
+    }),
   models: () => apiFetch<{ models: ModelInfo[]; healthy: boolean; ollama_url: string }>("/api/models"),
   assignedModels: () => apiFetch<ModelAssignment>("/api/models/assigned"),
   assignModels: (a: ModelAssignment) =>
