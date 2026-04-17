@@ -60,12 +60,28 @@ export interface OllamaStatus {
   url: string;
 }
 
+export interface Settings {
+  ollama_url: string;
+  max_iterations: number;
+  temperature: number;
+  max_tokens: number;
+  auto_test: boolean;
+  workspace: string;
+  shell_timeout: number;
+}
+
 export const api = {
   hardware: () => apiFetch<HardwareInfo>("/api/hardware"),
   ollamaStatus: () => apiFetch<OllamaStatus>("/api/ollama/status"),
   ollamaStart: () =>
     apiFetch<{ success: boolean; message: string }>("/api/ollama/start", {
       method: "POST",
+    }),
+  settings: () => apiFetch<Settings>("/api/settings"),
+  saveSettings: (s: Partial<Settings>) =>
+    apiFetch<{ status: string; message: string }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify(s),
     }),
   models: () => apiFetch<{ models: ModelInfo[]; healthy: boolean; ollama_url: string }>("/api/models"),
   assignedModels: () => apiFetch<ModelAssignment>("/api/models/assigned"),

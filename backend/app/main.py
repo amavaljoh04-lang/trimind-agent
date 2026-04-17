@@ -86,6 +86,72 @@ async def get_hardware():
     return hw.to_dict()
 
 
+# ── Settings ─────────────────────────────────────────────────────────
+@app.get("/api/settings")
+async def get_settings():
+    """Return current config settings."""
+    cfg = get_config()
+    return {
+        "ollama_url": cfg.ollama.base_url,
+        "max_iterations": cfg.agent.max_iterations,
+        "temperature": cfg.agent.temperature,
+        "max_tokens": cfg.agent.max_tokens,
+        "auto_test": cfg.agent.auto_test,
+        "workspace": cfg.tools.file_manager.workspace,
+        "shell_timeout": cfg.tools.shell.timeout,
+    }
+
+
+@app.post("/api/settings")
+async def save_settings(data: dict[str, Any]):
+    """Update settings at runtime and persist to config.yaml."""
+    global ollama
+    cfg = get_config()
+
+    if "ollama_url" in data:
+        cfg.ollama.base_url = data["ollama_url"]
+        ollama = OllamaClient(base_url=data["ollama_url"])
+    if "max_iterations" in data:
+        cfg.agent.max_iterations = int(data["max_iterations"])
+    if "temperature" in data:
+        cfg.agent.temperature = float(data["temperature"])
+    if "max_tokens" in data:
+        cfg.agent.max_tokens = int(data["max_tokens"])
+    if "auto_test" in data:
+        cfg.agent.auto_test = bool(data["auto_test"])
+    if "workspace" in data:
+        cfg.tools.file_manager.workspace = data["workspace"]
+    if "shell_timeout" in data:
+        cfg.tools.shell.timeout = int(data["shell_timeout"])
+
+    # Persist to config.yaml
+    try:
+        import yaml
+        config_path = os.environ.get("TRIMIND_CONFIG", "config.yaml")
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                raw = yaml.safe_load(f) or {}
+        else:
+            raw = {}
+
+        raw.setdefault("ollama", {})["base_url"] = cfg.ollama.base_url
+        raw.setdefault("agent", {}).update({
+            "max_iterations": cfg.agent.max_iterations,
+            "temperature": cfg.agent.temperature,
+            "max_tokens": cfg.agent.max_tokens,
+            "auto_test": cfg.agent.auto_test,
+        })
+        raw.setdefault("tools", {}).setdefault("shell", {})["timeout"] = cfg.tools.shell.timeout
+        raw.setdefault("tools", {}).setdefault("file_manager", {})["workspace"] = cfg.tools.file_manager.workspace
+
+        with open(config_path, "w") as f:
+            yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+
+        return {"status": "ok", "message": "Settings saved"}
+    except Exception as e:
+        return {"status": "ok", "message": f"Settings applied (save to disk failed: {e})"}
+
+
 # ── Ollama Status / Start ────────────────────────────────────────────
 @app.get("/api/ollama/status")
 async def ollama_status():
