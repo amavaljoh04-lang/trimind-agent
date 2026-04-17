@@ -6,7 +6,8 @@ export interface WSMessage {
 }
 
 export function useWebSocket(sessionId: string) {
-  const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000";
+  const backendPort = import.meta.env.VITE_BACKEND_PORT || "8000";
+  const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:${backendPort}`;
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<WSMessage[]>([]);

@@ -200,9 +200,8 @@ if [ "$RUN_FRONTEND" = true ]; then
     cd "$SCRIPT_DIR/frontend"
     npm install --silent 2>/dev/null || npm install
 
-    # Write .env with correct backend URL (use local IP for network access)
-    echo "VITE_API_URL=http://${LOCAL_IP}:$BACKEND_PORT" > .env
-    echo "VITE_WS_URL=ws://${LOCAL_IP}:$BACKEND_PORT" >> .env
+    # Write .env with backend port (frontend auto-detects hostname)
+    echo "VITE_BACKEND_PORT=$BACKEND_PORT" > .env
 
     npx vite --port "$FRONTEND_PORT" --host 0.0.0.0 &
     FRONTEND_PID=$!
