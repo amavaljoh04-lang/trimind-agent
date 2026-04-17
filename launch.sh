@@ -178,9 +178,10 @@ trap cleanup EXIT INT TERM
 
 # ─── Step 3: Start backend ───
 if [ "$RUN_BACKEND" = true ]; then
-    echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies..."
+    echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies (this may take a minute)..."
     cd "$SCRIPT_DIR/backend"
-    poetry install --quiet 2>/dev/null || poetry install
+    poetry config virtualenvs.in-project true 2>/dev/null || true
+    poetry install --no-interaction --without dev 2>&1 | tail -5
 
     echo -e "${BLUE}[3/4]${RESET} Starting backend on 0.0.0.0:$BACKEND_PORT..."
     TRIMIND_CONFIG="$CONFIG_FILE" poetry run fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
