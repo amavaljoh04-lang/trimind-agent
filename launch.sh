@@ -178,10 +178,23 @@ trap cleanup EXIT INT TERM
 
 # ─── Step 3: Start backend ───
 if [ "$RUN_BACKEND" = true ]; then
-    echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies (this may take a minute)..."
+    echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies..."
     cd "$SCRIPT_DIR/backend"
+
+    # Fix Poetry hanging on Ubuntu/Pop!_OS due to keyring
+    export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+
     poetry config virtualenvs.in-project true 2>/dev/null || true
-    poetry install --no-interaction --without dev 2>&1 | tail -5
+    echo -e "  ${CYAN}i${RESET} Running: poetry install (this may take 1-2 min the first time)..."
+    poetry install --no-interaction --without dev -v 2>&1 | while IFS= read -r line; do
+        # Show only important lines
+        case "$line" in
+            *Installing*|*Updating*|*Resolving*|*Writing*|*Package*|*Error*|*error*)
+                echo -e "  ${CYAN}>${RESET} $line"
+                ;;
+        esac
+    done
+    echo -e "  ${GREEN}✓${RESET} Backend dependencies installed"
 
     echo -e "${BLUE}[3/4]${RESET} Starting backend on 0.0.0.0:$BACKEND_PORT..."
     TRIMIND_CONFIG="$CONFIG_FILE" poetry run fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
