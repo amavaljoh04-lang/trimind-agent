@@ -122,9 +122,9 @@ LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 # Ensure data & workspace directories exist
 mkdir -p "$SCRIPT_DIR/data" "$SCRIPT_DIR/workspace"
 
-# ─── Step 2: Check / Install / Start Ollama ───
+# ─── Step 2: Uninstall / Install / Start Ollama ───
 echo ""
-echo -e "${BLUE}[1/4]${RESET} Checking Ollama..."
+echo -e "${BLUE}[1/4]${RESET} Setting up Ollama..."
 OLLAMA_URL="http://127.0.0.1:11434"
 if [ -f "$CONFIG_FILE" ]; then
     OLLAMA_URL=$(python3 -c "
@@ -135,37 +135,60 @@ print(c.get('ollama', {}).get('base_url', 'http://127.0.0.1:11434'))
 " 2>/dev/null || echo "http://127.0.0.1:11434")
 fi
 
-# Auto-install Ollama if not found
-if ! has_cmd ollama; then
-    echo -e "  ${YELLOW}!${RESET} Ollama not installed. Installing..."
-    curl -fsSL https://ollama.com/install.sh | sh 2>&1 | tail -3
-    if has_cmd ollama; then
-        echo -e "  ${GREEN}✓${RESET} Ollama installed successfully"
-    else
-        echo -e "  ${RED}✗${RESET} Ollama installation failed. Install manually:"
-        echo -e "    curl -fsSL https://ollama.com/install.sh | sh"
-        echo -e "  ${YELLOW}!${RESET} Continuing without Ollama..."
-    fi
-else
-    echo -e "  ${GREEN}✓${RESET} Ollama is installed ($(ollama --version 2>/dev/null || echo 'unknown version'))"
+# Uninstall existing Ollama if present
+if has_cmd ollama || [ -f /usr/local/bin/ollama ] || systemctl list-units --type=service 2>/dev/null | grep -q ollama; then
+    echo -e "  ${CYAN}i${RESET} Removing existing Ollama installation..."
+
+    # Stop Ollama service
+    sudo systemctl stop ollama 2>/dev/null || true
+    sudo systemctl disable ollama 2>/dev/null || true
+
+    # Kill any running ollama processes
+    sudo pkill -f "ollama serve" 2>/dev/null || true
+    sudo pkill ollama 2>/dev/null || true
+    sleep 1
+
+    # Remove binary
+    sudo rm -f /usr/local/bin/ollama 2>/dev/null || true
+    sudo rm -f /usr/bin/ollama 2>/dev/null || true
+
+    # Remove systemd service file
+    sudo rm -f /etc/systemd/system/ollama.service 2>/dev/null || true
+    sudo systemctl daemon-reload 2>/dev/null || true
+
+    # Remove ollama user (optional, ignore errors)
+    sudo userdel ollama 2>/dev/null || true
+    sudo groupdel ollama 2>/dev/null || true
+
+    echo -e "  ${GREEN}✓${RESET} Existing Ollama removed"
 fi
 
-# Auto-start Ollama if installed but not running
+# Fresh install Ollama
+echo -e "  ${CYAN}i${RESET} Installing Ollama (fresh install)..."
+curl -fsSL https://ollama.com/install.sh | sh 2>&1 | tail -5
+if has_cmd ollama; then
+    echo -e "  ${GREEN}✓${RESET} Ollama installed successfully ($(ollama --version 2>/dev/null || echo 'unknown version'))"
+else
+    echo -e "  ${RED}✗${RESET} Ollama installation failed. Install manually:"
+    echo -e "    curl -fsSL https://ollama.com/install.sh | sh"
+    echo -e "  ${YELLOW}!${RESET} Continuing without Ollama..."
+fi
+
+# Start Ollama
 if has_cmd ollama; then
     if ! curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
-        echo -e "  ${CYAN}i${RESET} Ollama is not running. Starting..."
+        echo -e "  ${CYAN}i${RESET} Starting Ollama..."
         # Try systemd first, then manual start
-        if systemctl is-active ollama &>/dev/null; then
-            : # already running via systemd
-        elif sudo systemctl start ollama 2>/dev/null; then
+        if sudo systemctl start ollama 2>/dev/null; then
             echo -e "  ${CYAN}i${RESET} Started Ollama via systemd"
         else
             # Manual start
             nohup ollama serve > /dev/null 2>&1 &
             echo -e "  ${CYAN}i${RESET} Started Ollama manually (PID: $!)"
         fi
-        # Wait for Ollama to be ready (up to 10 seconds)
-        for i in $(seq 1 10); do
+        # Wait for Ollama to be ready (up to 15 seconds)
+        echo -e "  ${CYAN}i${RESET} Waiting for Ollama to be ready..."
+        for i in $(seq 1 15); do
             if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
                 break
             fi
