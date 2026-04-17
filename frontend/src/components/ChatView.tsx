@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { WSMessage } from "../hooks/useWebSocket";
+import { api, type OllamaStatus } from "../hooks/useApi";
 
 interface AgentMsg {
   role: string;
@@ -78,6 +79,15 @@ export default function ChatView({
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+
+  // Poll Ollama status
+  useEffect(() => {
+    const check = () => api.ollamaStatus().then(setOllamaStatus).catch(() => {});
+    check();
+    const iv = setInterval(check, 10000);
+    return () => clearInterval(iv);
+  }, []);
 
   // Parse agent messages from WS messages
   const agentMessages: AgentMsg[] = messages
@@ -106,17 +116,33 @@ export default function ChatView({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-white/5 flex-wrap">
+        {/* Backend connection */}
         <div className="flex items-center gap-2">
           <div
             className={`w-2 h-2 rounded-full ${
               connected ? "bg-emerald-400 animate-pulse-slow" : "bg-red-400"
             }`}
           />
-          <span className="text-sm text-slate-400">
-            {connected ? "Connected" : "Disconnected"}
+          <span className="text-xs text-slate-400">
+            {connected ? "Backend" : "Disconnected"}
           </span>
         </div>
+        {/* Ollama status */}
+        {ollamaStatus && (
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                ollamaStatus.running ? "bg-emerald-400" : "bg-red-400"
+              }`}
+            />
+            <span className="text-xs text-slate-400">
+              {ollamaStatus.running
+                ? `Ollama (${ollamaStatus.url}) - ${ollamaStatus.model_count} models`
+                : "Ollama OFF"}
+            </span>
+          </div>
+        )}
         {isRunning && (
           <div className="ml-auto flex items-center gap-2">
             <Loader2 size={14} className="animate-spin text-blue-400" />
