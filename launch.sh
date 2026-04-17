@@ -194,16 +194,21 @@ if [ "$RUN_BACKEND" = true ]; then
     sleep 2
 fi
 
-# ─── Step 4: Start frontend ───
+# ─── Step 4: Build & start frontend ───
 if [ "$RUN_FRONTEND" = true ]; then
-    echo -e "${BLUE}[4/4]${RESET} Starting frontend on 0.0.0.0:$FRONTEND_PORT..."
+    echo -e "${BLUE}[4/5]${RESET} Installing frontend dependencies..."
     cd "$SCRIPT_DIR/frontend"
     npm install --silent 2>/dev/null || npm install
 
     # Write .env with backend port (frontend auto-detects hostname)
     echo "VITE_BACKEND_PORT=$BACKEND_PORT" > .env
 
-    npx vite --port "$FRONTEND_PORT" --host 0.0.0.0 &
+    echo -e "${BLUE}[5/5]${RESET} Building frontend for production..."
+    npx vite build 2>&1 | tail -5
+    echo -e "  ${GREEN}✓${RESET} Frontend built"
+
+    echo -e "  ${CYAN}i${RESET} Starting frontend on 0.0.0.0:$FRONTEND_PORT..."
+    npx vite preview --port "$FRONTEND_PORT" --host 0.0.0.0 &
     FRONTEND_PID=$!
 fi
 
