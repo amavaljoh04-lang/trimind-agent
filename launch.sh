@@ -47,26 +47,12 @@ if ! has_cmd pip3 && ! has_cmd pip; then
     sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip >/dev/null 2>&1
 fi
 
-# Poetry
-if ! has_cmd poetry; then
-    echo -e "  ${YELLOW}!${RESET} Poetry not found, installing..."
-    curl -sSL https://install.python-poetry.org | python3 - 2>/dev/null
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! has_cmd poetry; then
-        echo -e "  ${RED}✗${RESET} Poetry installation failed. Install manually:"
-        echo -e "    curl -sSL https://install.python-poetry.org | python3 -"
-        echo -e "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-        exit 1
-    fi
-    echo -e "  ${GREEN}✓${RESET} Poetry installed"
-    # Add to bashrc for future sessions
-    if ! grep -q '.local/bin' "$HOME/.bashrc" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-        echo -e "  ${CYAN}i${RESET} Added Poetry to PATH in ~/.bashrc"
-    fi
-else
-    echo -e "  ${GREEN}✓${RESET} Poetry $(poetry --version 2>&1 | awk '{print $NF}' | tr -d ')')"
+# python3-venv (needed for venv creation)
+if ! python3 -m venv --help &>/dev/null; then
+    echo -e "  ${YELLOW}!${RESET} python3-venv not found, installing..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq python3-venv >/dev/null 2>&1
 fi
+echo -e "  ${GREEN}✓${RESET} pip / venv ready"
 
 # Node.js & npm
 if ! has_cmd node || ! has_cmd npm; then
@@ -181,23 +167,20 @@ if [ "$RUN_BACKEND" = true ]; then
     echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies..."
     cd "$SCRIPT_DIR/backend"
 
-    # Fix Poetry hanging on Ubuntu/Pop!_OS due to keyring
-    export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+    # Create venv if it doesn't exist
+    if [ ! -d ".venv" ]; then
+        echo -e "  ${CYAN}i${RESET} Creating virtual environment..."
+        python3 -m venv .venv
+    fi
 
-    poetry config virtualenvs.in-project true 2>/dev/null || true
-    echo -e "  ${CYAN}i${RESET} Running: poetry install (this may take 1-2 min the first time)..."
-    poetry install --no-interaction --without dev -v 2>&1 | while IFS= read -r line; do
-        # Show only important lines
-        case "$line" in
-            *Installing*|*Updating*|*Resolving*|*Writing*|*Package*|*Error*|*error*)
-                echo -e "  ${CYAN}>${RESET} $line"
-                ;;
-        esac
-    done
+    # Activate venv and install deps
+    source .venv/bin/activate
+    echo -e "  ${CYAN}i${RESET} Installing packages (first time may take 1-2 min)..."
+    pip install -r requirements.txt -q 2>&1 | tail -3
     echo -e "  ${GREEN}✓${RESET} Backend dependencies installed"
 
     echo -e "${BLUE}[3/4]${RESET} Starting backend on 0.0.0.0:$BACKEND_PORT..."
-    TRIMIND_CONFIG="$CONFIG_FILE" poetry run fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
+    TRIMIND_CONFIG="$CONFIG_FILE" .venv/bin/python -m fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
     BACKEND_PID=$!
     sleep 2
 fi
