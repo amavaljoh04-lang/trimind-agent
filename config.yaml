@@ -7,7 +7,7 @@ server:
   frontend_port: 5173
 
 ollama:
-  base_url: "http://localhost:11434"
+  base_url: "http://127.0.0.1:11434"
 
 # Assign roles to models. You can change these to any model available in Ollama.
 # Use the /api/models endpoint or the UI to see available models.

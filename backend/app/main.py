@@ -90,19 +90,22 @@ async def get_hardware():
 @app.get("/api/ollama/status")
 async def ollama_status():
     """Check if Ollama is running and reachable."""
-    assert ollama is not None
+    cfg = get_config()
+    if ollama is None:
+        return {"running": False, "model_count": 0, "url": cfg.ollama.base_url, "error": "Backend not initialized"}
     try:
         models = await ollama.list_models()
         return {
             "running": True,
             "model_count": len(models),
-            "url": get_config().ollama.base_url,
+            "url": cfg.ollama.base_url,
         }
-    except Exception:
+    except Exception as e:
         return {
             "running": False,
             "model_count": 0,
-            "url": get_config().ollama.base_url,
+            "url": cfg.ollama.base_url,
+            "error": str(e),
         }
 
 

@@ -125,14 +125,14 @@ mkdir -p "$SCRIPT_DIR/data" "$SCRIPT_DIR/workspace"
 # ─── Step 2: Check Ollama ───
 echo ""
 echo -e "${BLUE}[1/4]${RESET} Checking Ollama..."
-OLLAMA_URL="http://localhost:11434"
+OLLAMA_URL="http://127.0.0.1:11434"
 if [ -f "$CONFIG_FILE" ]; then
     OLLAMA_URL=$(python3 -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
-print(c.get('ollama', {}).get('url', 'http://localhost:11434'))
-" 2>/dev/null || echo "http://localhost:11434")
+print(c.get('ollama', {}).get('url', 'http://127.0.0.1:11434'))
+" 2>/dev/null || echo "http://127.0.0.1:11434")
 fi
 
 if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
