@@ -15,7 +15,7 @@ class ServerConfig(BaseModel):
 
 
 class OllamaConfig(BaseModel):
-    base_url: str = "http://localhost:11434"
+    base_url: str = "http://127.0.0.1:11434"
 
 
 class ModelsConfig(BaseModel):

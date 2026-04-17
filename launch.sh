@@ -122,7 +122,7 @@ LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 # Ensure data & workspace directories exist
 mkdir -p "$SCRIPT_DIR/data" "$SCRIPT_DIR/workspace"
 
-# ─── Step 2: Check Ollama ───
+# ─── Step 2: Check / Install / Start Ollama ───
 echo ""
 echo -e "${BLUE}[1/4]${RESET} Checking Ollama..."
 OLLAMA_URL="http://127.0.0.1:11434"
@@ -131,18 +131,70 @@ if [ -f "$CONFIG_FILE" ]; then
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
-print(c.get('ollama', {}).get('url', 'http://127.0.0.1:11434'))
+print(c.get('ollama', {}).get('base_url', 'http://127.0.0.1:11434'))
 " 2>/dev/null || echo "http://127.0.0.1:11434")
 fi
 
-if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
-    MODEL_COUNT=$(curl -s "$OLLAMA_URL/api/tags" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "?")
-    echo -e "  ${GREEN}✓${RESET} Ollama is running at $OLLAMA_URL ($MODEL_COUNT models available)"
+# Auto-install Ollama if not found
+if ! has_cmd ollama; then
+    echo -e "  ${YELLOW}!${RESET} Ollama not installed. Installing..."
+    curl -fsSL https://ollama.com/install.sh | sh 2>&1 | tail -3
+    if has_cmd ollama; then
+        echo -e "  ${GREEN}✓${RESET} Ollama installed successfully"
+    else
+        echo -e "  ${RED}✗${RESET} Ollama installation failed. Install manually:"
+        echo -e "    curl -fsSL https://ollama.com/install.sh | sh"
+        echo -e "  ${YELLOW}!${RESET} Continuing without Ollama..."
+    fi
 else
-    echo -e "  ${YELLOW}!${RESET} Ollama not detected at $OLLAMA_URL"
-    echo -e "  ${YELLOW}!${RESET} Install: curl -fsSL https://ollama.com/install.sh | sh"
-    echo -e "  ${YELLOW}!${RESET} Then pull a model: ollama pull qwen2.5-coder:14b"
-    echo -e "  ${YELLOW}!${RESET} Continuing anyway — configure Ollama URL in settings"
+    echo -e "  ${GREEN}✓${RESET} Ollama is installed ($(ollama --version 2>/dev/null || echo 'unknown version'))"
+fi
+
+# Auto-start Ollama if installed but not running
+if has_cmd ollama; then
+    if ! curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+        echo -e "  ${CYAN}i${RESET} Ollama is not running. Starting..."
+        # Try systemd first, then manual start
+        if systemctl is-active ollama &>/dev/null; then
+            : # already running via systemd
+        elif sudo systemctl start ollama 2>/dev/null; then
+            echo -e "  ${CYAN}i${RESET} Started Ollama via systemd"
+        else
+            # Manual start
+            nohup ollama serve > /dev/null 2>&1 &
+            echo -e "  ${CYAN}i${RESET} Started Ollama manually (PID: $!)"
+        fi
+        # Wait for Ollama to be ready (up to 10 seconds)
+        for i in $(seq 1 10); do
+            if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+    fi
+
+    if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+        MODEL_COUNT=$(curl -s "$OLLAMA_URL/api/tags" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "0")
+        echo -e "  ${GREEN}✓${RESET} Ollama is running at $OLLAMA_URL ($MODEL_COUNT models available)"
+
+        # Auto-pull recommended models if none exist
+        if [ "$MODEL_COUNT" = "0" ]; then
+            echo -e "  ${CYAN}i${RESET} No models found. Pulling recommended models..."
+            echo -e "  ${CYAN}i${RESET} This may take a while depending on your connection..."
+            echo -e "  ${CYAN}i${RESET} Pulling qwen2.5-coder:7b (code generation)..."
+            ollama pull qwen2.5-coder:7b 2>&1 | tail -1
+            echo -e "  ${CYAN}i${RESET} Pulling deepseek-coder:6.7b (planning)..."
+            ollama pull deepseek-coder:6.7b 2>&1 | tail -1
+            echo -e "  ${CYAN}i${RESET} Pulling llama3.1:8b (review)..."
+            ollama pull llama3.1:8b 2>&1 | tail -1
+            echo -e "  ${GREEN}✓${RESET} Recommended models downloaded"
+        fi
+    else
+        echo -e "  ${RED}✗${RESET} Ollama failed to start. Check: journalctl -u ollama"
+        echo -e "  ${YELLOW}!${RESET} Continuing without Ollama..."
+    fi
+else
+    echo -e "  ${YELLOW}!${RESET} Ollama not available. AI features will not work."
 fi
 
 # Parse arguments
@@ -189,7 +241,7 @@ if [ "$RUN_BACKEND" = true ]; then
     echo -e "  ${GREEN}✓${RESET} Backend dependencies installed"
 
     echo -e "${BLUE}[3/4]${RESET} Starting backend on 0.0.0.0:$BACKEND_PORT..."
-    TRIMIND_CONFIG="$CONFIG_FILE" .venv/bin/python -m fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
+    TRIMIND_CONFIG="$CONFIG_FILE" .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
     BACKEND_PID=$!
     sleep 2
 fi
