@@ -11,6 +11,8 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
 RESET='\033[0m'
 BOLD='\033[1m'
 
@@ -25,18 +27,85 @@ echo -e "${RESET}"
 echo -e "${CYAN}  3 AI Minds in Symbiosis${RESET}"
 echo ""
 
-# Read config values
-BACKEND_PORT=8000
-FRONTEND_PORT=5173
+# ─── Helper: check if command exists ───
+has_cmd() { command -v "$1" &>/dev/null; }
 
-if command -v python3 &>/dev/null && [ -f "$CONFIG_FILE" ]; then
-    BACKEND_PORT=$(python3 -c "
+# ─── Step 0: Auto-install prerequisites ───
+echo -e "${BLUE}[0/5]${RESET} Checking prerequisites..."
+
+# Python3
+if ! has_cmd python3; then
+    echo -e "  ${RED}✗${RESET} python3 not found. Please install Python 3.10+ first."
+    echo -e "    sudo apt install python3 python3-pip python3-venv"
+    exit 1
+fi
+echo -e "  ${GREEN}✓${RESET} Python3 $(python3 --version 2>&1 | awk '{print $2}')"
+
+# pip
+if ! has_cmd pip3 && ! has_cmd pip; then
+    echo -e "  ${YELLOW}!${RESET} pip not found, installing..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip >/dev/null 2>&1
+fi
+
+# Poetry
+if ! has_cmd poetry; then
+    echo -e "  ${YELLOW}!${RESET} Poetry not found, installing..."
+    curl -sSL https://install.python-poetry.org | python3 - 2>/dev/null
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! has_cmd poetry; then
+        echo -e "  ${RED}✗${RESET} Poetry installation failed. Install manually:"
+        echo -e "    curl -sSL https://install.python-poetry.org | python3 -"
+        echo -e "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+        exit 1
+    fi
+    echo -e "  ${GREEN}✓${RESET} Poetry installed"
+    # Add to bashrc for future sessions
+    if ! grep -q '.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+        echo -e "  ${CYAN}i${RESET} Added Poetry to PATH in ~/.bashrc"
+    fi
+else
+    echo -e "  ${GREEN}✓${RESET} Poetry $(poetry --version 2>&1 | awk '{print $NF}' | tr -d ')')"
+fi
+
+# Node.js & npm
+if ! has_cmd node || ! has_cmd npm; then
+    echo -e "  ${YELLOW}!${RESET} Node.js/npm not found, installing..."
+    if has_cmd curl; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >/dev/null 2>&1
+        sudo apt-get install -y -qq nodejs >/dev/null 2>&1
+    else
+        sudo apt-get update -qq && sudo apt-get install -y -qq nodejs npm >/dev/null 2>&1
+    fi
+    if ! has_cmd node; then
+        echo -e "  ${RED}✗${RESET} Node.js installation failed. Install manually:"
+        echo -e "    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+        echo -e "    sudo apt-get install -y nodejs"
+        exit 1
+    fi
+    echo -e "  ${GREEN}✓${RESET} Node.js installed"
+else
+    echo -e "  ${GREEN}✓${RESET} Node.js $(node --version) / npm $(npm --version)"
+fi
+
+# PyYAML for config parsing
+python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml -q 2>/dev/null || pip install pyyaml -q 2>/dev/null
+
+# ─── Step 1: Ask for ports ───
+echo ""
+
+# Read defaults from config.yaml
+DEFAULT_BACKEND_PORT=8000
+DEFAULT_FRONTEND_PORT=5173
+
+if [ -f "$CONFIG_FILE" ]; then
+    DEFAULT_BACKEND_PORT=$(python3 -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
 print(c.get('server', {}).get('port', 8000))
 " 2>/dev/null || echo 8000)
-    FRONTEND_PORT=$(python3 -c "
+    DEFAULT_FRONTEND_PORT=$(python3 -c "
 import yaml
 with open('$CONFIG_FILE') as f:
     c = yaml.safe_load(f)
@@ -44,18 +113,47 @@ print(c.get('server', {}).get('frontend_port', 5173))
 " 2>/dev/null || echo 5173)
 fi
 
+echo -e "${CYAN}Configuration des ports${RESET}"
+echo -e "  (Appuyez sur Entree pour garder la valeur par defaut)"
+echo ""
+
+read -rp "  Port backend  [$DEFAULT_BACKEND_PORT]: " INPUT_BACKEND_PORT
+BACKEND_PORT="${INPUT_BACKEND_PORT:-$DEFAULT_BACKEND_PORT}"
+
+read -rp "  Port frontend [$DEFAULT_FRONTEND_PORT]: " INPUT_FRONTEND_PORT
+FRONTEND_PORT="${INPUT_FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}"
+
+echo ""
+echo -e "  ${GREEN}✓${RESET} Backend  -> 0.0.0.0:${BACKEND_PORT}"
+echo -e "  ${GREEN}✓${RESET} Frontend -> 0.0.0.0:${FRONTEND_PORT}"
+
+# Get local IP for display
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+
 # Ensure data & workspace directories exist
 mkdir -p "$SCRIPT_DIR/data" "$SCRIPT_DIR/workspace"
 
-# Check Ollama
+# ─── Step 2: Check Ollama ───
+echo ""
 echo -e "${BLUE}[1/4]${RESET} Checking Ollama..."
-if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-    MODEL_COUNT=$(curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "?")
-    echo -e "  ${GREEN}✓${RESET} Ollama is running ($MODEL_COUNT models available)"
+OLLAMA_URL="http://localhost:11434"
+if [ -f "$CONFIG_FILE" ]; then
+    OLLAMA_URL=$(python3 -c "
+import yaml
+with open('$CONFIG_FILE') as f:
+    c = yaml.safe_load(f)
+print(c.get('ollama', {}).get('url', 'http://localhost:11434'))
+" 2>/dev/null || echo "http://localhost:11434")
+fi
+
+if curl -s "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+    MODEL_COUNT=$(curl -s "$OLLAMA_URL/api/tags" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('models',[])))" 2>/dev/null || echo "?")
+    echo -e "  ${GREEN}✓${RESET} Ollama is running at $OLLAMA_URL ($MODEL_COUNT models available)"
 else
-    echo -e "  ${PURPLE}!${RESET} Ollama not detected at localhost:11434"
-    echo -e "  ${PURPLE}!${RESET} Install: curl -fsSL https://ollama.com/install.sh | sh"
-    echo -e "  ${PURPLE}!${RESET} Continuing anyway — configure Ollama URL in settings"
+    echo -e "  ${YELLOW}!${RESET} Ollama not detected at $OLLAMA_URL"
+    echo -e "  ${YELLOW}!${RESET} Install: curl -fsSL https://ollama.com/install.sh | sh"
+    echo -e "  ${YELLOW}!${RESET} Then pull a model: ollama pull qwen2.5-coder:14b"
+    echo -e "  ${YELLOW}!${RESET} Continuing anyway — configure Ollama URL in settings"
 fi
 
 # Parse arguments
@@ -78,37 +176,42 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Start backend
+# ─── Step 3: Start backend ───
 if [ "$RUN_BACKEND" = true ]; then
     echo -e "${BLUE}[2/4]${RESET} Installing backend dependencies..."
     cd "$SCRIPT_DIR/backend"
     poetry install --quiet 2>/dev/null || poetry install
 
-    echo -e "${BLUE}[3/4]${RESET} Starting backend on port $BACKEND_PORT..."
-    TRIMIND_CONFIG="$CONFIG_FILE" poetry run fastapi run app/main.py --port "$BACKEND_PORT" &
+    echo -e "${BLUE}[3/4]${RESET} Starting backend on 0.0.0.0:$BACKEND_PORT..."
+    TRIMIND_CONFIG="$CONFIG_FILE" poetry run fastapi run app/main.py --host 0.0.0.0 --port "$BACKEND_PORT" &
     BACKEND_PID=$!
     sleep 2
 fi
 
-# Start frontend
+# ─── Step 4: Start frontend ───
 if [ "$RUN_FRONTEND" = true ]; then
-    echo -e "${BLUE}[4/4]${RESET} Starting frontend on port $FRONTEND_PORT..."
+    echo -e "${BLUE}[4/4]${RESET} Starting frontend on 0.0.0.0:$FRONTEND_PORT..."
     cd "$SCRIPT_DIR/frontend"
     npm install --silent 2>/dev/null || npm install
 
-    # Write .env with correct backend URL
-    echo "VITE_API_URL=http://localhost:$BACKEND_PORT" > .env
-    echo "VITE_WS_URL=ws://localhost:$BACKEND_PORT" >> .env
+    # Write .env with correct backend URL (use local IP for network access)
+    echo "VITE_API_URL=http://${LOCAL_IP}:$BACKEND_PORT" > .env
+    echo "VITE_WS_URL=ws://${LOCAL_IP}:$BACKEND_PORT" >> .env
 
-    npx vite --port "$FRONTEND_PORT" --host &
+    npx vite --port "$FRONTEND_PORT" --host 0.0.0.0 &
     FRONTEND_PID=$!
 fi
 
 echo ""
-echo -e "${GREEN}${BOLD}TriMind Agent is running!${RESET}"
-echo -e "  ${CYAN}Frontend:${RESET}  http://localhost:$FRONTEND_PORT"
-echo -e "  ${CYAN}Backend:${RESET}   http://localhost:$BACKEND_PORT"
-echo -e "  ${CYAN}API Docs:${RESET}  http://localhost:$BACKEND_PORT/docs"
+echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${GREEN}${BOLD}  TriMind Agent is running!${RESET}"
+echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo ""
+echo -e "  ${CYAN}Frontend (local):${RESET}   http://localhost:$FRONTEND_PORT"
+echo -e "  ${CYAN}Frontend (network):${RESET} http://${LOCAL_IP}:$FRONTEND_PORT"
+echo -e "  ${CYAN}Backend  (local):${RESET}   http://localhost:$BACKEND_PORT"
+echo -e "  ${CYAN}Backend  (network):${RESET} http://${LOCAL_IP}:$BACKEND_PORT"
+echo -e "  ${CYAN}API Docs:${RESET}           http://${LOCAL_IP}:$BACKEND_PORT/docs"
 echo ""
 echo -e "${PURPLE}Press Ctrl+C to stop${RESET}"
 
