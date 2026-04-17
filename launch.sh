@@ -49,8 +49,11 @@ fi
 
 # python3-venv (needed for venv creation)
 if ! python3 -m venv --help &>/dev/null; then
-    echo -e "  ${YELLOW}!${RESET} python3-venv not found, installing..."
-    sudo apt-get update -qq && sudo apt-get install -y -qq python3-venv >/dev/null 2>&1
+    PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    echo -e "  ${YELLOW}!${RESET} python3-venv not found, installing python${PY_VER}-venv..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq "python${PY_VER}-venv" python3-venv >/dev/null 2>&1 || \
+    sudo apt-get install -y -qq python3-venv >/dev/null 2>&1
 fi
 echo -e "  ${GREEN}✓${RESET} pip / venv ready"
 
