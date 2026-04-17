@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from app.agent.hardware import detect_hardware
 from app.agent.memory import MemoryStore
@@ -39,6 +40,7 @@ memory = MemoryStore()
 ollama: OllamaClient | None = None
 active_sessions: dict[str, Orchestrator] = {}
 ws_connections: dict[str, list[WebSocket]] = {}
+_github_token: str = ""
 
 
 @asynccontextmanager
@@ -99,6 +101,7 @@ async def get_settings():
         "auto_test": cfg.agent.auto_test,
         "workspace": cfg.tools.file_manager.workspace,
         "shell_timeout": cfg.tools.shell.timeout,
+        "github_token": _github_token or "",
     }
 
 
@@ -123,6 +126,9 @@ async def save_settings(data: dict[str, Any]):
         cfg.tools.file_manager.workspace = data["workspace"]
     if "shell_timeout" in data:
         cfg.tools.shell.timeout = int(data["shell_timeout"])
+    if "github_token" in data:
+        global _github_token
+        _github_token = data["github_token"]
 
     # Persist to config.yaml
     try:
@@ -261,17 +267,72 @@ async def pull_model(data: dict[str, str]):
     model_name = data.get("name", "")
     if not model_name:
         return {"error": "Model name required"}
+
+    async def _stream():
+        try:
+            async for update in ollama.pull_model(model_name):
+                yield f"data: {json.dumps(update)}\n\n"
+            yield f"data: {json.dumps({'status': 'success', 'model': model_name})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+# ── Workspace (File Browser) ──────────────────────────────────────
+@app.get("/api/workspace/tree")
+async def workspace_tree(path: str = ".", depth: int = 4):
+    """List workspace directory tree."""
+    cfg = get_config()
+    workspace = os.path.abspath(cfg.tools.file_manager.workspace)
+    os.makedirs(workspace, exist_ok=True)
+    target = os.path.normpath(os.path.join(workspace, path))
+    if not target.startswith(workspace):
+        return {"error": "Path outside workspace"}
+    return {"tree": _build_file_tree(target, depth, 0), "root": path}
+
+
+@app.get("/api/workspace/file")
+async def workspace_read_file(path: str):
+    """Read a file from workspace."""
+    cfg = get_config()
+    workspace = os.path.abspath(cfg.tools.file_manager.workspace)
+    full = os.path.normpath(os.path.join(workspace, path))
+    if not full.startswith(workspace):
+        return {"error": "Path outside workspace"}
+    if not os.path.isfile(full):
+        return {"error": f"File not found: {path}"}
     try:
-        progress: list[dict[str, Any]] = []
-        async for update in ollama.pull_model(model_name):
-            progress.append(update)
-        return {
-            "status": "ok",
-            "model": model_name,
-            "progress": progress[-1] if progress else {},
-        }
+        with open(full, "r", errors="replace") as f:
+            content = f.read(100_000)  # Cap at 100KB
+        return {"path": path, "content": content, "size": os.path.getsize(full)}
     except Exception as e:
         return {"error": str(e)}
+
+
+def _build_file_tree(dir_path: str, max_depth: int, depth: int) -> list[dict[str, Any]]:
+    """Build a JSON file tree."""
+    if depth >= max_depth or not os.path.isdir(dir_path):
+        return []
+    entries: list[dict[str, Any]] = []
+    try:
+        for name in sorted(os.listdir(dir_path)):
+            if name.startswith(".") and name not in (".gitignore",):
+                continue
+            full = os.path.join(dir_path, name)
+            is_dir = os.path.isdir(full)
+            entry: dict[str, Any] = {
+                "name": name,
+                "type": "dir" if is_dir else "file",
+            }
+            if is_dir:
+                entry["children"] = _build_file_tree(full, max_depth, depth + 1)
+            else:
+                entry["size"] = os.path.getsize(full)
+            entries.append(entry)
+    except PermissionError:
+        pass
+    return entries
 
 
 # ── Sessions ─────────────────────────────────────────────────────────
@@ -333,6 +394,14 @@ async def _run_task(session_id: str, orch: Orchestrator, message: str) -> None:
         active_sessions.pop(session_id, None)
 
 
+async def _broadcast_phase(session_id: str, phase: str, iteration: int) -> None:
+    """Broadcast phase change to all connected clients."""
+    await _broadcast_ws(
+        session_id,
+        WSResponse(type="phase", data={"phase": phase, "iteration": iteration}),
+    )
+
+
 # ── WebSocket ────────────────────────────────────────────────────────
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
@@ -372,8 +441,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         ),
                     )
 
+                async def on_phase(phase: str, iteration: int) -> None:
+                    await _broadcast_phase(session_id, phase, iteration)
+
                 orch = Orchestrator(
-                    ollama=ollama, memory=memory, on_message=on_message
+                    ollama=ollama, memory=memory, on_message=on_message, on_phase=on_phase
                 )
                 active_sessions[session_id] = orch
                 asyncio.create_task(_run_task(session_id, orch, user_message))

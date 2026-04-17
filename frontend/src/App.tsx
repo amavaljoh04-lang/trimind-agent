@@ -4,7 +4,10 @@ import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import ModelsView from "./components/ModelsView";
 import SettingsView from "./components/SettingsView";
+import FileBrowser from "./components/FileBrowser";
+import TerminalPanel from "./components/TerminalPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { FolderTree, Terminal } from "lucide-react";
 
 /** Generate a UUID that works in non-secure contexts (plain HTTP) */
 function generateId(): string {
@@ -19,6 +22,8 @@ function generateId(): string {
   });
 }
 
+type RightPanel = "none" | "terminal" | "files";
+
 function App() {
   const [activeView, setActiveView] = useState<"chat" | "models" | "settings">(
     "chat"
@@ -26,6 +31,7 @@ function App() {
   const [sessionId, setSessionId] = useState<string>(generateId);
   const [isRunning, setIsRunning] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [rightPanel, setRightPanel] = useState<RightPanel>("none");
 
   const { connected, messages, send, clearMessages } = useWebSocket(sessionId);
 
@@ -69,6 +75,17 @@ function App() {
     }
   }, [messages, isRunning]);
 
+  // Auto-open terminal when task starts running
+  useEffect(() => {
+    if (isRunning && rightPanel === "none") {
+      setRightPanel("terminal");
+    }
+  }, [isRunning, rightPanel]);
+
+  const togglePanel = (panel: RightPanel) => {
+    setRightPanel((prev) => (prev === panel ? "none" : panel));
+  };
+
   return (
     <div className="flex h-screen bg-[#0a0a0f] relative">
       {/* Mobile overlay */}
@@ -101,6 +118,8 @@ function App() {
           }}
         />
       </div>
+
+      {/* Main content area */}
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Mobile top bar with hamburger */}
         <div className="flex items-center gap-3 px-4 py-2 border-b border-white/5 md:hidden">
@@ -113,21 +132,114 @@ function App() {
             </svg>
           </button>
           <span className="text-sm font-semibold text-gradient">TriMind Agent</span>
+          {/* Panel toggles for mobile */}
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => togglePanel("terminal")}
+              className={`p-1.5 rounded-lg text-xs transition-colors ${
+                rightPanel === "terminal"
+                  ? "bg-emerald-500/10 text-emerald-400"
+                  : "text-slate-500 hover:bg-white/5"
+              }`}
+            >
+              <Terminal size={16} />
+            </button>
+            <button
+              onClick={() => togglePanel("files")}
+              className={`p-1.5 rounded-lg text-xs transition-colors ${
+                rightPanel === "files"
+                  ? "bg-blue-500/10 text-blue-400"
+                  : "text-slate-500 hover:bg-white/5"
+              }`}
+            >
+              <FolderTree size={16} />
+            </button>
+          </div>
         </div>
-        <div className="flex-1 min-h-0">
-          {activeView === "chat" && (
-            <ChatView
-              messages={messages}
-              connected={connected}
-              onSend={handleSend}
-              onStop={handleStop}
-              isRunning={isRunning}
-            />
+
+        {/* Content with optional right panel */}
+        <div className="flex-1 min-h-0 flex">
+          {/* Main view */}
+          <div className={`flex-1 min-w-0 ${rightPanel !== "none" ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}>
+            {activeView === "chat" && (
+              <ChatView
+                messages={messages}
+                connected={connected}
+                onSend={handleSend}
+                onStop={handleStop}
+                isRunning={isRunning}
+              />
+            )}
+            {activeView === "models" && <ModelsView />}
+            {activeView === "settings" && <SettingsView />}
+          </div>
+
+          {/* Right panel (terminal / file browser) */}
+          {rightPanel !== "none" && (
+            <div className="w-full sm:w-80 md:w-96 border-l border-white/5 flex flex-col glass-light">
+              {/* Panel tabs */}
+              <div className="flex items-center border-b border-white/5">
+                <button
+                  onClick={() => setRightPanel("terminal")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                    rightPanel === "terminal"
+                      ? "text-emerald-400 border-b-2 border-emerald-400"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <Terminal size={13} /> Terminal
+                </button>
+                <button
+                  onClick={() => setRightPanel("files")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                    rightPanel === "files"
+                      ? "text-blue-400 border-b-2 border-blue-400"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <FolderTree size={13} /> Files
+                </button>
+              </div>
+
+              {/* Panel content */}
+              <div className="flex-1 min-h-0">
+                {rightPanel === "terminal" && (
+                  <TerminalPanel messages={messages} />
+                )}
+                {rightPanel === "files" && (
+                  <FileBrowser />
+                )}
+              </div>
+            </div>
           )}
-          {activeView === "models" && <ModelsView />}
-          {activeView === "settings" && <SettingsView />}
         </div>
       </main>
+
+      {/* Desktop panel toggle buttons — fixed right side */}
+      <div className="hidden md:flex flex-col gap-1 p-1 border-l border-white/5">
+        <button
+          onClick={() => togglePanel("terminal")}
+          className={`p-2 rounded-lg transition-colors ${
+            rightPanel === "terminal"
+              ? "bg-emerald-500/10 text-emerald-400"
+              : "text-slate-600 hover:bg-white/5 hover:text-slate-400"
+          }`}
+          title="Terminal"
+        >
+          <Terminal size={16} />
+        </button>
+        <button
+          onClick={() => togglePanel("files")}
+          className={`p-2 rounded-lg transition-colors ${
+            rightPanel === "files"
+              ? "bg-blue-500/10 text-blue-400"
+              : "text-slate-600 hover:bg-white/5 hover:text-slate-400"
+          }`}
+          title="Files"
+        >
+          <FolderTree size={16} />
+        </button>
+      </div>
     </div>
   );
 }

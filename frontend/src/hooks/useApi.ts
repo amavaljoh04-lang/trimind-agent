@@ -68,6 +68,20 @@ export interface Settings {
   auto_test: boolean;
   workspace: string;
   shell_timeout: number;
+  github_token?: string;
+}
+
+export interface FileNode {
+  name: string;
+  type: "file" | "dir";
+  size?: number;
+  children?: FileNode[];
+}
+
+export interface WorkspaceFile {
+  path: string;
+  content: string;
+  size: number;
 }
 
 export const api = {
@@ -102,4 +116,10 @@ export const api = {
     ),
   stopSession: (id: string) =>
     apiFetch<{ status: string }>(`/api/sessions/${id}/stop`, { method: "POST" }),
+  workspaceTree: (path = ".", depth = 4) =>
+    apiFetch<{ tree: FileNode[]; root: string }>(
+      `/api/workspace/tree?path=${encodeURIComponent(path)}&depth=${depth}`
+    ),
+  workspaceFile: (path: string) =>
+    apiFetch<WorkspaceFile>(`/api/workspace/file?path=${encodeURIComponent(path)}`),
 };

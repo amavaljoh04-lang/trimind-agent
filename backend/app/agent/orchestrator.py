@@ -125,10 +125,12 @@ class Orchestrator:
         ollama: OllamaClient,
         memory: MemoryStore,
         on_message: Callable[[AgentMessage], Coroutine[Any, Any, None]] | None = None,
+        on_phase: Callable[[str, int], Coroutine[Any, Any, None]] | None = None,
     ):
         self.ollama = ollama
         self.memory = memory
         self.on_message = on_message
+        self.on_phase = on_phase
 
         cfg = get_config()
         self.planner_model = cfg.models.planner
@@ -169,6 +171,11 @@ class Orchestrator:
         """Emit a message to the callback and save to memory."""
         if self.on_message:
             await self.on_message(msg)
+
+    async def _emit_phase(self, phase: str, iteration: int) -> None:
+        """Emit phase change to the callback."""
+        if self.on_phase:
+            await self.on_phase(phase, iteration)
 
     async def _call_model(self, model: str, system: str, prompt: str) -> str:
         """Call an Ollama model with retry."""
@@ -274,6 +281,7 @@ class Orchestrator:
 
             # --- PHASE 1: PLANNER ---
             self._status = TaskStatus.PLANNING
+            await self._emit_phase("planning", iteration)
 
             plan_prompt = self._build_planner_prompt(
                 user_message, context, history, iteration
@@ -318,6 +326,7 @@ class Orchestrator:
 
             # --- PHASE 2: EXECUTOR ---
             self._status = TaskStatus.EXECUTING
+            await self._emit_phase("executing", iteration)
 
             exec_prompt = self._build_executor_prompt(
                 user_message, planner_data, history
@@ -351,6 +360,7 @@ class Orchestrator:
 
             # --- PHASE 3: REVIEWER ---
             self._status = TaskStatus.REVIEWING
+            await self._emit_phase("reviewing", iteration)
 
             review_prompt = self._build_reviewer_prompt(
                 user_message, planner_data, tool_call, history
@@ -375,6 +385,7 @@ class Orchestrator:
             # --- PHASE 4: AUTO-TEST ---
             if reviewer_data.get("should_test") and reviewer_data.get("test_command"):
                 self._status = TaskStatus.TESTING
+                await self._emit_phase("testing", iteration)
                 test_result = await self.shell.execute(
                     reviewer_data["test_command"]
                 )

@@ -20,7 +20,6 @@ export default function SettingsView() {
     workspace: "./workspace",
     shell_timeout: 30,
   });
-  const [githubToken, setGithubToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
@@ -39,7 +38,10 @@ export default function SettingsView() {
     setSaving(true);
     setSaveMsg("");
     try {
-      const res = await api.saveSettings(settings);
+      const payload = { ...settings };
+      // Don't send empty token (avoids overwriting)
+      if (!payload.github_token) delete payload.github_token;
+      const res = await api.saveSettings(payload);
       setSaveMsg(res.message || "Settings saved!");
       setTimeout(() => setSaveMsg(""), 3000);
     } catch {
@@ -164,8 +166,8 @@ export default function SettingsView() {
           <Field label="GitHub Token" sub="For auto-creating repositories">
             <input
               type="password"
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
+              value={settings.github_token || ""}
+              onChange={(e) => update("github_token", e.target.value)}
               placeholder="ghp_..."
               className="input-field"
             />

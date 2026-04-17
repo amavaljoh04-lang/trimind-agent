@@ -1,48 +1,33 @@
-# TriMind Agent Configuration
-# ============================
-
 server:
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 8000
   frontend_port: 5173
-
 ollama:
-  base_url: "http://127.0.0.1:11434"
-
-# Assign roles to models. You can change these to any model available in Ollama.
-# Use the /api/models endpoint or the UI to see available models.
+  base_url: http://127.0.0.1:11434
 models:
-  planner: "llama3"        # Strategic reasoning, task decomposition
-  executor: "codellama"    # Code generation, command execution
-  reviewer: "mistral"      # Code review, validation, error detection
-
-# Agent behavior
+  planner: llama3
+  executor: codellama
+  reviewer: mistral
 agent:
-  max_iterations: 20           # Max autonomous loop iterations
-  auto_test: true              # Automatically test until project works
+  max_iterations: 20
+  auto_test: true
   temperature: 0.7
   max_tokens: 4096
-
-# Memory
 memory:
   enabled: true
-  db_path: "./data/memory.db"
+  db_path: ./data/memory.db
   max_context_messages: 50
-
-# Tools
 tools:
   shell:
     enabled: true
-    timeout: 30               # seconds
-    allowed_commands: []       # empty = all allowed
+    timeout: 30
+    allowed_commands: []
   browser:
     enabled: true
-    timeout: 15               # seconds
+    timeout: 15
   file_manager:
     enabled: true
-    workspace: "./workspace"  # Agent's working directory
-
-# Logging
+    workspace: ./workspace
 logging:
-  level: "INFO"               # DEBUG, INFO, WARNING, ERROR
-  file: "./data/trimind.log"
+  level: INFO
+  file: ./data/trimind.log

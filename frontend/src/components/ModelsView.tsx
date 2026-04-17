@@ -27,6 +27,12 @@ export default function ModelsView() {
   const [loading, setLoading] = useState(true);
   const [pullName, setPullName] = useState("");
   const [pulling, setPulling] = useState(false);
+  const [pullProgress, setPullProgress] = useState<{
+    status: string;
+    completed?: number;
+    total?: number;
+    digest?: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startMsg, setStartMsg] = useState("");
@@ -82,14 +88,43 @@ export default function ModelsView() {
   const handlePull = async () => {
     if (!pullName.trim()) return;
     setPulling(true);
+    setPullProgress(null);
     try {
-      await api.pullModel(pullName.trim());
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || `http://${window.location.hostname}:${(window as unknown as Record<string, unknown>).__TRIMIND_BACKEND_PORT__ || import.meta.env.VITE_BACKEND_PORT || "8000"}`}/api/models/pull`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: pullName.trim() }),
+        }
+      );
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (reader) {
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const d = JSON.parse(line.slice(6));
+                setPullProgress(d);
+              } catch { /* skip */ }
+            }
+          }
+        }
+      }
       await refresh();
       setPullName("");
     } catch {
-      // ignore
+      setPullProgress({ status: "error" });
     } finally {
       setPulling(false);
+      setTimeout(() => setPullProgress(null), 3000);
     }
   };
 
@@ -243,6 +278,7 @@ export default function ModelsView() {
               placeholder="Model name (e.g. llama3.1:8b)"
               className="flex-1 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-sm text-white placeholder-slate-600 outline-none focus:border-blue-500/30"
               onKeyDown={(e) => e.key === "Enter" && handlePull()}
+              disabled={pulling}
             />
             <button
               onClick={handlePull}
@@ -257,6 +293,42 @@ export default function ModelsView() {
               Pull
             </button>
           </div>
+          {/* Pull progress bar */}
+          {pulling && pullProgress && (
+            <div className="mt-3 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">
+                  {pullProgress.status === "success"
+                    ? "Download complete!"
+                    : pullProgress.status === "error"
+                    ? "Download failed"
+                    : pullProgress.status || "Preparing..."}
+                </span>
+                {pullProgress.completed && pullProgress.total ? (
+                  <span className="text-slate-500">
+                    {Math.round((pullProgress.completed / pullProgress.total) * 100)}%
+                  </span>
+                ) : null}
+              </div>
+              {pullProgress.total ? (
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        ((pullProgress.completed || 0) / pullProgress.total) * 100,
+                        100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full w-1/3 rounded-full bg-blue-500 animate-pulse" />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Installed Models */}
