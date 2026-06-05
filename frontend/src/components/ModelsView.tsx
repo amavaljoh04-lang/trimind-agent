@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Brain,
   Code2,
   Download,
   Eye,
   Loader2,
+  Play,
   RefreshCw,
   Cpu,
 } from "lucide-react";
@@ -25,7 +27,15 @@ export default function ModelsView() {
   const [loading, setLoading] = useState(true);
   const [pullName, setPullName] = useState("");
   const [pulling, setPulling] = useState(false);
+  const [pullProgress, setPullProgress] = useState<{
+    status: string;
+    completed?: number;
+    total?: number;
+    digest?: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startMsg, setStartMsg] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -41,6 +51,22 @@ export default function ModelsView() {
       setHealthy(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStartOllama = async () => {
+    setStarting(true);
+    setStartMsg("");
+    try {
+      const res = await api.ollamaStart();
+      setStartMsg(res.message);
+      if (res.success) {
+        await refresh();
+      }
+    } catch {
+      setStartMsg("Failed to start Ollama. Make sure it is installed.");
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -62,14 +88,43 @@ export default function ModelsView() {
   const handlePull = async () => {
     if (!pullName.trim()) return;
     setPulling(true);
+    setPullProgress(null);
     try {
-      await api.pullModel(pullName.trim());
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || `http://${window.location.hostname}:${(window as unknown as Record<string, unknown>).__TRIMIND_BACKEND_PORT__ || import.meta.env.VITE_BACKEND_PORT || "8000"}`}/api/models/pull`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: pullName.trim() }),
+        }
+      );
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (reader) {
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const d = JSON.parse(line.slice(6));
+                setPullProgress(d);
+              } catch { /* skip */ }
+            }
+          }
+        }
+      }
       await refresh();
       setPullName("");
     } catch {
-      // ignore
+      setPullProgress({ status: "error" });
     } finally {
       setPulling(false);
+      setTimeout(() => setPullProgress(null), 3000);
     }
   };
 
@@ -109,6 +164,52 @@ export default function ModelsView() {
             </button>
           </div>
         </div>
+
+        {/* Ollama Status Banner */}
+        {!healthy && !loading && (
+          <div className="glass rounded-xl p-5 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <h3 className="text-sm font-semibold text-amber-400">
+                  Ollama is not running
+                </h3>
+                <p className="text-xs text-slate-400">
+                  TriMind needs Ollama to run AI models. Start Ollama or install it if not already installed.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    onClick={handleStartOllama}
+                    disabled={starting}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-300 text-sm hover:bg-amber-600/30 disabled:opacity-50 transition-all"
+                  >
+                    {starting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                    {starting ? "Starting..." : "Start Ollama"}
+                  </button>
+                </div>
+                {startMsg && (
+                  <p className="text-xs text-slate-300 mt-2 px-3 py-2 rounded bg-black/20 border border-white/5 font-mono">
+                    {startMsg}
+                  </p>
+                )}
+                <div className="text-xs text-slate-500 mt-2 space-y-1">
+                  <p>If Ollama is not installed:</p>
+                  <code className="block px-2 py-1 rounded bg-black/30 text-slate-400 font-mono">
+                    curl -fsSL https://ollama.com/install.sh | sh
+                  </code>
+                  <p className="mt-1">Then pull a model:</p>
+                  <code className="block px-2 py-1 rounded bg-black/30 text-slate-400 font-mono">
+                    ollama pull qwen2.5-coder:14b
+                  </code>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Role Assignment */}
         <div className="glass rounded-xl p-6 space-y-5">
@@ -177,6 +278,7 @@ export default function ModelsView() {
               placeholder="Model name (e.g. llama3.1:8b)"
               className="flex-1 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-sm text-white placeholder-slate-600 outline-none focus:border-blue-500/30"
               onKeyDown={(e) => e.key === "Enter" && handlePull()}
+              disabled={pulling}
             />
             <button
               onClick={handlePull}
@@ -191,6 +293,42 @@ export default function ModelsView() {
               Pull
             </button>
           </div>
+          {/* Pull progress bar */}
+          {pulling && pullProgress && (
+            <div className="mt-3 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">
+                  {pullProgress.status === "success"
+                    ? "Download complete!"
+                    : pullProgress.status === "error"
+                    ? "Download failed"
+                    : pullProgress.status || "Preparing..."}
+                </span>
+                {pullProgress.completed && pullProgress.total ? (
+                  <span className="text-slate-500">
+                    {Math.round((pullProgress.completed / pullProgress.total) * 100)}%
+                  </span>
+                ) : null}
+              </div>
+              {pullProgress.total ? (
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        ((pullProgress.completed || 0) / pullProgress.total) * 100,
+                        100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full w-1/3 rounded-full bg-blue-500 animate-pulse" />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Installed Models */}

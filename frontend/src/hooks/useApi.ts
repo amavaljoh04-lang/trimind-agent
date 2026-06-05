@@ -1,4 +1,13 @@
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+/** Read backend port from global config injected by launch.sh, or fallback to env/default */
+function getBackendPort(): string {
+  const win = window as unknown as Record<string, unknown>;
+  if (win.__TRIMIND_BACKEND_PORT__) return String(win.__TRIMIND_BACKEND_PORT__);
+  if (import.meta.env.VITE_BACKEND_PORT) return import.meta.env.VITE_BACKEND_PORT;
+  return "8000";
+}
+
+const BACKEND_PORT = getBackendPort();
+const API = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:${BACKEND_PORT}`;
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -45,8 +54,49 @@ export interface SessionInfo {
   last_message: string | null;
 }
 
+export interface OllamaStatus {
+  running: boolean;
+  model_count: number;
+  url: string;
+}
+
+export interface Settings {
+  ollama_url: string;
+  max_iterations: number;
+  temperature: number;
+  max_tokens: number;
+  auto_test: boolean;
+  workspace: string;
+  shell_timeout: number;
+  github_token?: string;
+}
+
+export interface FileNode {
+  name: string;
+  type: "file" | "dir";
+  size?: number;
+  children?: FileNode[];
+}
+
+export interface WorkspaceFile {
+  path: string;
+  content: string;
+  size: number;
+}
+
 export const api = {
   hardware: () => apiFetch<HardwareInfo>("/api/hardware"),
+  ollamaStatus: () => apiFetch<OllamaStatus>("/api/ollama/status"),
+  ollamaStart: () =>
+    apiFetch<{ success: boolean; message: string }>("/api/ollama/start", {
+      method: "POST",
+    }),
+  settings: () => apiFetch<Settings>("/api/settings"),
+  saveSettings: (s: Partial<Settings>) =>
+    apiFetch<{ status: string; message: string }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify(s),
+    }),
   models: () => apiFetch<{ models: ModelInfo[]; healthy: boolean; ollama_url: string }>("/api/models"),
   assignedModels: () => apiFetch<ModelAssignment>("/api/models/assigned"),
   assignModels: (a: ModelAssignment) =>
@@ -66,4 +116,10 @@ export const api = {
     ),
   stopSession: (id: string) =>
     apiFetch<{ status: string }>(`/api/sessions/${id}/stop`, { method: "POST" }),
+  workspaceTree: (path = ".", depth = 4) =>
+    apiFetch<{ tree: FileNode[]; root: string }>(
+      `/api/workspace/tree?path=${encodeURIComponent(path)}&depth=${depth}`
+    ),
+  workspaceFile: (path: string) =>
+    apiFetch<WorkspaceFile>(`/api/workspace/file?path=${encodeURIComponent(path)}`),
 };
